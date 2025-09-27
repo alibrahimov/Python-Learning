@@ -1,9 +1,9 @@
-alish_qiymeti = input("alish qiymetini gir qaqashim: ")
-satish_qiymeti = input("satish qiymetini gir qaqashim: ")
+alish_qiymeti = input("alish qiymetini gir: ")
+satish_qiymeti = input("satish qiymetini gir: ")
 
 if (int(satish_qiymeti) - int(alish_qiymeti))<0:
-    print("sen poxdasan, ziyanin da ", (int(satish_qiymeti) - int(alish_qiymeti)), " manatdi")
+    print("loss, ziyanin da ", (int(satish_qiymeti) - int(alish_qiymeti)), " manatdi")
 elif (int(satish_qiymeti) - int(alish_qiymeti))>0:
-     print("QAQASHIM QAZANIT AXI, OZDE ", ((int(satish_qiymeti) - int(alish_qiymeti)), "MANATTT BLETTTT"))
+     print("gain, ", ((int(satish_qiymeti) - int(alish_qiymeti)), "manat qazandin"))
 else:
-    print("QAQASHIM QOYUNDU, POX DA QAZANNAMIYIB")
+    print("hecne qazanmadin")
