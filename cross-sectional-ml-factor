@@ -1,0 +1,109 @@
+import numpy as np
+import pandas as pd
+import yfinance as yf
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.preprocessing import StandardScaler
+import matplotlib.pyplot as plt
+
+tickers = [
+"AAPL","MSFT","GOOGL","AMZN","META","NVDA","TSLA","JPM","V","UNH",
+"HD","PG","MA","DIS","BAC","XOM","KO","PFE","INTC","CSCO",
+"CMCSA","PEP","ABT","T","CRM","ADBE","NFLX","WMT","COST","ORCL",
+"AVGO","ACN","MCD","DHR","QCOM","LLY","MDT","TXN","HON","LIN",
+"LOW","AMGN","IBM","INTU","NEE","UPS","PM","RTX","SPGI","BA"
+]
+
+start = "2012-01-01"
+end = "2025-01-01"
+
+data = yf.download(tickers, start=start, end=end, auto_adjust=True)["Close"]
+returns = np.log(data).diff()
+
+momentum = data.pct_change(21)
+volatility = returns.rolling(21).std()
+mean_reversion = -returns.rolling(5).sum()
+
+forward_returns = returns.shift(-21)
+
+features = pd.concat([momentum.stack(), volatility.stack(), mean_reversion.stack()], axis=1)
+features.columns = ["momentum","volatility","mean_reversion"]
+features["forward_return"] = forward_returns.stack()
+
+features = features.dropna()
+
+def cross_sectional_zscore(df):
+    return (df - df.mean()) / df.std()
+
+features[["momentum","volatility","mean_reversion"]] = features.groupby(level=0)[["momentum","volatility","mean_reversion"]].transform(cross_sectional_zscore)
+
+dates = features.index.get_level_values(0).unique()
+
+train_cutoff = int(len(dates) * 0.7)
+train_dates = dates[:train_cutoff]
+test_dates = dates[train_cutoff:]
+
+train_data = features.loc[train_dates]
+test_data = features.loc[test_dates]
+
+X_train = train_data[["momentum","volatility","mean_reversion"]]
+y_train = train_data["forward_return"]
+
+model = RandomForestRegressor(n_estimators=200, max_depth=6)
+model.fit(X_train, y_train)
+
+predictions = []
+
+for date in test_dates:
+    daily_data = features.loc[date]
+    X_test = daily_data[["momentum","volatility","mean_reversion"]]
+    preds = model.predict(X_test)
+    ranked = pd.Series(preds, index=X_test.index)
+    predictions.append(ranked)
+
+predictions = pd.concat(predictions, keys=test_dates)
+
+portfolio_returns = []
+
+for date in test_dates:
+    daily_pred = predictions.loc[date]
+    daily_true = features.loc[date]["forward_return"]
+    n = len(daily_pred)
+    top_decile = daily_pred.nlargest(int(n*0.1)).index
+    bottom_decile = daily_pred.nsmallest(int(n*0.1)).index
+    long_ret = daily_true.loc[top_decile].mean()
+    short_ret = daily_true.loc[bottom_decile].mean()
+    portfolio_returns.append(long_ret - short_ret)
+
+portfolio_returns = pd.Series(portfolio_returns, index=test_dates)
+
+cum_returns = (1 + portfolio_returns).cumprod()
+
+cagr = cum_returns.iloc[-1] ** (12 / len(portfolio_returns)) - 1
+vol = portfolio_returns.std() * np.sqrt(12)
+sharpe = cagr / vol
+
+drawdown = cum_returns / cum_returns.cummax() - 1
+max_dd = drawdown.min()
+
+ic_values = []
+
+for date in test_dates:
+    preds = predictions.loc[date]
+    true = features.loc[date]["forward_return"]
+    ic = preds.corr(true)
+    ic_values.append(ic)
+
+ic_series = pd.Series(ic_values, index=test_dates)
+mean_ic = ic_series.mean()
+
+results = pd.DataFrame({
+    "Metric": ["CAGR","Volatility","Sharpe Ratio","Max Drawdown","Mean IC"],
+    "Value": [cagr, vol, sharpe, max_dd, mean_ic]
+})
+
+print(results)
+
+plt.figure(figsize=(10,6))
+plt.plot(cum_returns)
+plt.title("Cross-Sectional ML Factor Strategy Equity Curve")
+plt.show()
